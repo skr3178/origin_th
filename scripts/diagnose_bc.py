@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import torch
+import imageio
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -76,6 +77,32 @@ def classify(success, cube_z, dist, grip):
     if not lifted:
         return "fail:grasp_no_lift"
     return "fail:lifted_then_dropped"
+
+
+def save_rollout_videos(policy, targets, fps=20):
+    """Deterministic replay of pass 1: re-seed AND rebuild the env the same way
+    main() does (robosuite consumes np.random during make_env, so the env must be
+    recreated after seeding for the rollouts to reproduce exactly). Captures +
+    saves frames only for `targets` (dict: rollout index -> output mp4 path)."""
+    np.random.seed(SEED); torch.manual_seed(SEED)
+    env = make_env()
+    saved = []
+    for i in range(N_ROLLOUTS):
+        obs = flatten_obs_dict(env.reset())
+        frames = []
+        for t in range(MAX_STEPS):
+            with torch.no_grad():
+                action = policy.act(torch.from_numpy(obs).float().to(DEVICE)).cpu().numpy()
+            obs_dict, _, done, _ = env.step(action)
+            obs = flatten_obs_dict(obs_dict)
+            if i in targets:
+                frames.append(np.flipud(env.sim.render(height=256, width=256, camera_name="agentview")))
+            if env._check_success() or done:
+                break
+        if i in targets:
+            imageio.mimsave(targets[i], frames, fps=fps)
+            saved.append(targets[i])
+    return saved
 
 
 def main():
@@ -137,6 +164,23 @@ def main():
     fig.tight_layout(); fig.savefig(p2, dpi=120); plt.close(fig)
 
     print(f"\nPlots saved:\n  {p1}\n  {p2}")
+
+    # --- videos: every failure + one success (deterministic replay) ---
+    def short(phase):
+        return phase.replace("fail:", "").replace("success", "success")
+    targets = {}
+    for r in records:
+        if not r["success"]:
+            targets[r["i"]] = os.path.join(OUT_DIR, f"bc_fail_{r['i']:02d}_{short(r['phase'])}.mp4")
+    first_ok = next((r["i"] for r in records if r["success"]), None)
+    if first_ok is not None:
+        targets[first_ok] = os.path.join(OUT_DIR, f"bc_success_{first_ok:02d}.mp4")
+
+    print(f"\nRendering {len(targets)} rollouts to video (failures + 1 success)...")
+    saved = save_rollout_videos(bc, targets)
+    print("Videos saved:")
+    for p in saved:
+        print(f"  {p}")
 
 
 if __name__ == "__main__":
