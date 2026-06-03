@@ -1,0 +1,28 @@
+# Code-only repo — exclude data, model checkpoints, videos, plots, and caches.
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Dataset (auto-downloaded by the notebook / data pipeline)
+data/
+*.hdf5
+*.h5
+
+# Generated artifacts
+out/
+out_viz/
+*.pt
+*.pth
+*.ckpt
+
+# Binary media / docs
+*.mp4
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
