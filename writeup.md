@@ -195,8 +195,24 @@ genuinely beat BC you'd need sub-optimal/exploratory data or online interaction 
 improvement direction. This matches the bound sweep and the +1/−3 paired flip analysis, and
 is the honest result the brief explicitly values over a cherry-picked high score.
 
+## Runs & artifacts
+
+Outputs live in `out/` (the **live** folder these plots link to). Each completed run is also
+copied — never moved — into a frozen snapshot under `out/runs/<descriptor>/`, so re-running
+never destroys an earlier result and the `out/...` image links above always resolve to the
+latest. Naming is by the run's defining config (see `out/runs/README.md`).
+
+| Run snapshot | What it tests | Key result |
+|---|---|---|
+| **`main_b0.005`** | The shipped pipeline: frozen BC → TD3+BC residual at **delta_bound = 0.005** → per-dim shield, plus the supporting experiments (BC failure diagnostics, the **clip-in-target ablation**, the **bound sweep** 0.05/0.02/0.01/0.005, and the **BC overfit→failure-mode sweep** at 2/5/20/80 epochs). | BC **0.867**, Residual+Shield **0.800** (within noise); bound is the critical knob; residual ceiling = BC on all-expert data. |
+
+Future runs that vary a knob (e.g. a different residual bound, seed, or algorithm) get their
+own snapshot folder — e.g. `b0.010_seed42`, `iql_baseline` — so every run is preserved and
+comparable, while `out/` continues to hold whichever is latest.
+
 ## Reproduce
 
 `origin10x` env, from `10x/`: `python scripts/train_bc.py` → `diagnose_bc.py` →
-`train_residual.py` → `ablation_residual.py` → `run_eval.py` → `plot_final_eval.py`.
-The notebook `origin_assignment_takehome.ipynb` runs the same pipeline end-to-end.
+`train_residual.py` → `ablation_residual.py` → `run_eval.py` → `plot_final_eval.py` →
+`bc_failure_modes.py`. The notebook `origin_assignment_takehome.ipynb` runs the core
+pipeline end-to-end. Each run's artifacts are archived under `out/runs/<descriptor>/`.
