@@ -194,6 +194,7 @@ deliberately **over-trained** BC (80 epochs) to surface a larger, categorized fa
 
 | Failure mode | Shipped BC (144/150 ok) | Overfit BC (120/150 ok) |
 |---|---|---|
+The residual architecture (Eq. 1)
 | never_reached | 1 | **22** |
 | reached_no_grasp | 3 | 4 |
 | grasp_no_lift | 2 | 4 |
@@ -209,7 +210,25 @@ gripper→cube distance vs max lift): `reached_no_grasp` cluster at low distance
 `grasp_no_lift` slightly higher, `never_reached` past the reach threshold. (4) Panel **(d)**:
 **every** shipped failure ends at step 400 — BC *stalls*, it never crashes or diverges.
 
-## The residual architecture (Eq. 1)
+## Task 3 — Headline
+
+A bounded TD3+BC residual on the frozen BC backbone, **statistically indistinguishable from
+BC** (30 rollouts, seed 42, same starts):
+
+| Metric | BC | Residual + Shield |
+|---|---|---|
+| success_rate | 0.867 (26/30) | 0.800 (24/30) |
+| p99 latency (ms) | ~0.3 | ~0.5 |
+| shield clip rate | — | 0.063 |
+
+Two identical-config runs landed at 0.80 and 0.90 — both within ~1 SE (±~2 successes) of BC's
+26/30, and the sign of the delta flips between runs. The residual **recovers BC and stays
+close to it** (`delta_mag` ≈ 0.0048 inside the 0.005 bound) but does **not** beat it. Root
+cause: lift-ph is **all-expert / all-success** data, so the offline critic has no signal for
+what is *better* than the demos — the residual's ceiling is BC. This honest null result is
+what the brief values over a cherry-picked high score.
+
+### The residual architecture (Eq. 1)
 
 ```
 a_executed(s) = clip( a_BC(s) + δ_θ(s) , -1, +1 )
@@ -253,24 +272,6 @@ BC stalls at the grasp/lift phase on ~3 of its 4 failures, and a small δ on the
 position/gripper dims is the natural correction. The catch (documented below): on all-expert
 `ph` data BC is already near-optimal, so the learned δ has little room to help — hence the
 residual ends up statistically indistinguishable from BC, not a clear win.
-
-## Task 3 — Headline
-
-A bounded TD3+BC residual on the frozen BC backbone, **statistically indistinguishable from
-BC** (30 rollouts, seed 42, same starts):
-
-| Metric | BC | Residual + Shield |
-|---|---|---|
-| success_rate | 0.867 (26/30) | 0.800 (24/30) |
-| p99 latency (ms) | ~0.3 | ~0.5 |
-| shield clip rate | — | 0.063 |
-
-Two identical-config runs landed at 0.80 and 0.90 — both within ~1 SE (±~2 successes) of BC's
-26/30, and the sign of the delta flips between runs. The residual **recovers BC and stays
-close to it** (`delta_mag` ≈ 0.0048 inside the 0.005 bound) but does **not** beat it. Root
-cause: lift-ph is **all-expert / all-success** data, so the offline critic has no signal for
-what is *better* than the demos — the residual's ceiling is BC. This honest null result is
-what the brief values over a cherry-picked high score.
 
 ## Eight decisions
 
