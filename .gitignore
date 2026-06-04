@@ -6,3 +6,7 @@ __pycache__/
 *.pyc
 *.pyo
 .ipynb_checkpoints/
+
+# Local-only scratch / inspection material (not deliverables)
+out/smoke_test/
+references/robomimic/

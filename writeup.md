@@ -388,6 +388,38 @@ the OOD region thin; it amplifies with a larger bound.
 A slowly-moving target network stabilizes the bootstrap. Hard (periodic copy) updates make
 the target jump and can destabilize the critic on this small, sparse-reward dataset.
 
+*Provenance.* This is not a free choice — it follows the reference TD3-BC. robomimic's
+`algo/td3_bc.py` calls `TorchUtils.soft_update(tau=0.005)` **every training step**
+(`td3_bc.py:416`) and uses `hard_update` *only once*, to initialize the target net
+(`td3_bc.py:69`); the reference exposes **no periodic-copy option at all**. Soft tracking was
+introduced by DDPG (Lillicrap et al. 2016) specifically to replace DQN's hard copy (Mnih et
+al. 2015) — "target values are constrained to change slowly, greatly improving stability" —
+and TD3 (Fujimoto et al. 2018) sets τ = 0.005, the exact value we (and robomimic) use.
+
+*Ablation.* We trained the residual identically (same seed/init/bound 0.005, all TD3+BC
+machinery) under three target-update rules: soft Polyak vs hard periodic-copy every 250 and
+every 1000 actor-updates.
+
+![Ablation: soft Polyak vs hard target copy (decision #7)](out/residual_target_update_ablation.png)
+
+| target update | final `critic_loss` | `critic_loss` jumpiness¹ | `q_mean` | success (30 roll) |
+|---|---|---|---|---|
+| **soft Polyak (shipped)** | **0.0002** | **0.0039** | +0.378 (smooth) | 0.767 |
+| hard copy @250 | 0.0028 | 0.0059 | +0.159 (jagged) | 0.833 |
+| hard copy @1000 | 0.0070 | 0.0069 | +0.098 (jagged) | — |
+
+¹ mean absolute step-to-step change in `critic_loss` (lower = smoother).
+
+The right panel is the evidence: on log-scale `critic_loss`, soft descends smoothly to ~1e-4,
+while **hard copies spike the critic 10–100× at every copy boundary** (visible at steps
+2k/4k/6k/8k/10k for hard@1000 — exactly where the target is overwritten). Final critic TD
+error is **14–35× higher** under hard, and the spike magnitude grows with the copy period.
+**Like decision #6, the effect is clear in the critic diagnostics but not in task success**
+(soft 0.77 vs hard@250 0.83 is within 30-rollout noise — the whole pipeline sits in the
+0.75–0.90 ≈ BC band). So soft is justified on **critic stability and reference provenance**,
+not on a success-rate win; the instability it prevents would amplify with a larger bound or a
+less-saturated dataset. *(Reproduce: `scripts/residual_target_update_ablation.py`.)*
+
 **8. Training step count — 10,000.**
 Chosen by reading the diagnostics, not guessing. We ran a step-count ablation — one 40k-step
 run with rollout evals at 5k/10k/20k/40k:
