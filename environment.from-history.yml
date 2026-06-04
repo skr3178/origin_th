@@ -1,0 +1,7 @@
+name: s2s_10x
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # Everything else (robomimic, robosuite, torch, ...) was pip-installed —
+  # see requirements.txt for the full pinned list.
