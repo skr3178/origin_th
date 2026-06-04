@@ -1,0 +1,23 @@
+{
+  "seed": 42,
+  "steps": 10000,
+  "bound": 0.005,
+  "n_rollouts": 30,
+  "bc_success": 0.867,
+  "runs": {
+    "delta(s) (shipped)": {
+      "condition_on_bc": false,
+      "success_rate": 0.8,
+      "shield_clip_rate": 0.061405946096137816,
+      "delta_mag_final": 0.004950417671352625,
+      "delta_net_params": 19975
+    },
+    "delta(s, a_BC(s))": {
+      "condition_on_bc": true,
+      "success_rate": 0.8666666666666667,
+      "shield_clip_rate": 0.08289124668435013,
+      "delta_mag_final": 0.004765515681356192,
+      "delta_net_params": 20871
+    }
+  }
+}

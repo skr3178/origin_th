@@ -302,10 +302,23 @@ improvement direction; BC would merely re-copy the demonstrated action.
 
 ## Eight decisions
 
-**1. Architecture — δ(s) only (2×128 ReLU MLP).**
+**1. Architecture — δ(s) only (2×128 ReLU MLP) — *ablated, confirmed*.**
 The residual conditions on state alone. `a_BC(s)` is a *deterministic* function of `s`, so
 feeding it as an extra input adds no information. A small head suffices because it only has
-to learn a correction on a frozen, already-good backbone.
+to learn a correction on a frozen, already-good backbone. We **verified this empirically**
+rather than only asserting it — same config (bound 0.005, seed 42, 30-rollout eval), the only
+change being whether `a_BC(s)` is concatenated to the residual MLP's input:
+
+| residual head | success | settled `delta_mag` | `delta_net` params |
+|---|---|---|---|
+| **δ(s)** (shipped) | 0.800 | 0.0050 | 19,975 |
+| δ(s, a_BC(s)) | 0.867 | 0.0048 | 20,871 |
+
+Both are **within 30-rollout sampling noise** of each other and of BC (0.867), with
+near-identical (saturated) `delta_mag`. Conditioning on `a_BC(s)` buys **no reliable gain**
+and costs +896 params — exactly the "provably redundant" outcome the argument predicts (the
+MLP on `s` can already recover `a_BC(s)` internally). So δ(s) is kept: same behavior, fewer
+parameters. (`scripts/ablation_architecture.py` → `out/ablation_architecture.{png,json}`.)
 
 **2. Activation on δ — `tanh × delta_bound`.**
 Smooth and **hard-bounded by construction**: the residual is mathematically guaranteed to
