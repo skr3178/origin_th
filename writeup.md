@@ -335,6 +335,23 @@ the collapse at large bounds is the δ, not a bug. We ship **0.005** as a safely
 (0.002 was marginally higher here, but within noise — the point is "keep it small," not the
 exact value).
 
+*Multi-seed confirmation that 0.002 vs 0.005 is within noise (not inferred — measured).* We
+re-ran both bounds at 3 training seeds each (10k steps, eval seed 42):
+
+![Bound 0.002 vs 0.005 — 3 seeds](out/residual_bound_seedcheck.png)
+
+| bound | per-seed success | mean | std |
+|---|---|---|---|
+| 0.002 | 0.833 / 0.900 / 0.900 | 0.878 | 0.038 |
+| 0.005 | 0.933 / 0.967 / 0.867 | 0.922 | 0.051 |
+
+The **per-seed ranking flips** (0.005 wins seeds 0–1, 0.002 wins seed 2), and the means
+**reverse** the original single-seed table (there 0.002 0.90 > 0.005 0.80; here 0.005 0.92 >
+0.002 0.88) — so the original ordering was seed-luck. The difference is not significant
+(Welch t p = 0.30; pooled 79/90 vs 83/90, Fisher p = 0.46), and both clusters straddle BC's
+0.867. Confirms the defense: **within the small regime the exact bound is noise; "keep it
+small" is the real finding.** (`scripts/seed_check_bound.py` → `out/residual_bound_seedcheck.{png,json}`.)
+
 *What `delta_mag` is.* It's one of the training diagnostics — the **average size of the
 residual nudge**:
 
@@ -368,6 +385,34 @@ Twin critics + delayed actor + target smoothing control Q-overestimation; the **
 term `MSE(a_exec, a_demo)` makes it *offline-safe* by keeping the executed action near
 demonstrated actions (no extrapolation into unseen states). An ablation on the Q-weight α
 showed large α over-trusts a miscalibrated offline Q and regresses.
+
+*Cross-algorithm study (the brief's "run at least one ablation, explain why your choice won").*
+We re-ran the residual with two **non-TD3+BC** offline-RL algorithms, same framing (frozen BC +
+bounded δ, bound 0.005), 3 seeds each, 10k steps, eval seed 42:
+
+- **AWAC** — advantage-weighted regression actor (collapses to BC when advantages vanish);
+- **IQL** — expectile value net + V-bootstrapped Q, so it **never queries Q at OOD actions**.
+  Both are referenced: IQL is shipped in robomimic (`algo/iql.py`); AWAC's AWR actor *is*
+  robomimic-IQL's policy-extraction step (`residual_lift/algorithms.py`).
+
+![Residual algorithm comparison](out/algo_comparison.png)
+
+| Algorithm | success (3 seeds) | mean | std | shield clip | vs TD3+BC |
+|---|---|---|---|---|---|
+| TD3+BC | 0.93 / 0.97 / 0.87 | 0.922 | 0.051 | 0.061 | — |
+| AWAC | 0.90 / 0.90 / 0.90 | 0.900 | 0.000 | 0.008 | Welch p = 0.53 (NS) |
+| IQL | 0.90 / 0.93 / 0.93 | 0.922 | 0.019 | **0.000** | Welch p = 1.00 (NS) |
+
+Two conclusions. (1) **The null result is algorithm-independent** — all three are statistically
+indistinguishable (both p ≫ 0.05) and all sit at/just above BC's 0.867. This is the key
+finding: on all-expert data the *ceiling is BC*, no matter the offline-RL algorithm — so the
+data, not the algorithm, is the binding constraint. (2) **On the metrics that actually separate
+them here — stability and safety, not success — IQL wins**: lowest variance (std 0.019 vs
+TD3+BC's 0.051) and a **0.000 shield clip rate** (vs 0.061), exactly as its no-OOD-query design
+predicts. So TD3+BC is a fine choice, but **IQL is the better-suited algorithm for this
+narrow expert data** — it recovers BC with strictly tighter, never-out-of-distribution actions.
+(`scripts/algo_comparison.py` → `out/algo_comparison.{png,json}`, per-algorithm diagnostics in
+`out/algo_diag_{awac,iql}.png`.)
 
 **5. Reward — sparse terminal, as given (no shaping).**
 In this dataset `done ≡ reward` (both fire on the lift-success step), so the TD target
@@ -561,6 +606,46 @@ control test confirms the mechanism is sound — forcing δ=0 reproduces BC exac
 genuinely beat BC you'd need sub-optimal/exploratory data or online interaction to learn an
 improvement direction. This matches the bound sweep and the +1/−3 paired flip analysis, and
 is the honest result the brief explicitly values over a cherry-picked high score.
+
+### Grounding & reproduction vs Mandlekar et al. 2021 (robomimic)
+
+The null result isn't specific to our setup — it's the central finding of the robomimic study
+(*"What Matters in Learning from Offline Human Demonstrations"*, `references/`). Their Table 1
+(low-dim) benchmarks 6 algorithms; the Lift rows:
+
+| | BC | BC-RNN | BCQ | CQL | HBC | IRIS |
+|---|---|---|---|---|---|---|
+| **Lift (PH)** — *our regime* | **100.0** | 100.0 | 100.0 | 92.7 | 100.0 | 100.0 |
+| Lift (MG) — machine-generated | 65.3 | 70.7 | 91.3 | 64.0 | 47.3 | 96.0 |
+
+Two published laws this establishes, both of which we reproduce **qualitatively**:
+
+1. **On proficient-human (PH) data, BC already saturates Lift and offline RL does not beat it**
+   — even *regresses* (CQL 92.7 < BC 100). The paper states it directly: *"Batch RL algorithms
+   like BCQ are proficient on machine-generated data, [but] they perform poorly on human
+   datasets."* Our residual (TD3+BC/AWAC/IQL) is statistically indistinguishable from BC — same
+   conclusion, on the same task and data regime.
+2. **Offline RL only wins on suboptimal (MG) data** (BCQ 91.3 / IRIS 96.0 vs BC 65.3) — the
+   flip side of "no headroom on expert data," and exactly why we say beating BC would need
+   sub-optimal/exploratory data.
+
+**Quantitative match — no (and that's expected).** Side-by-side (Lift, low-dim, PH):
+
+| Method | Paper (Table 1, PH) | Ours | Match? |
+|---|---|---|---|
+| BC | 100.0 | 86.7 (26/30) | same regime, ~13 pts lower |
+| Offline RL (paper: BCQ / CQL) | BCQ 100.0, CQL 92.7 | — | — |
+| Our offline RL: TD3+BC | — | 0.922 (0.93 / 0.97 / 0.87) | ties BC (NS) |
+| AWAC | — | 0.900 | ties BC (NS) |
+| IQL | — | 0.922 | ties BC (NS) |
+
+The ~13-pt gap is **methodological, not a bug** (their *plain* BC also hits 100, so it isn't
+RNN-vs-MLP): (a) the paper evaluates **every checkpoint online and reports the best per run**
+(their challenge C4), whereas we freeze **one** val-MSE-early-stopped checkpoint per the "freeze
+after §1 / reproducible-from-seed" rule; (b) per-algorithm hyperparameter sweeps vs our light
+defaults; (c) larger eval sets. We deliberately keep our stricter single-checkpoint protocol
+and cite the paper to explain the level difference — the **relationship** (offline RL ties/loses
+to BC on PH; the ceiling is BC) is what reproduces, and it externally validates the null result.
 
 ## Runs & artifacts
 
