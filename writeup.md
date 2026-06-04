@@ -10,6 +10,37 @@ well-diagnosed null result. The value is in the diagnosis, not a higher score.
 
 ---
 
+## Background — the state and action vectors
+
+The policy input (state/observation) is a **19-dimensional vector**, built by concatenating 4
+observation keys from the dataset (`OBS_KEYS` in the setup cell):
+
+| Obs key | Dims | Meaning |
+|---|---|---|
+| `object` | 10 | cube position (3) + cube orientation quaternion (4) + gripper-to-cube position vector (3) |
+| `robot0_eef_pos` | 3 | end-effector Cartesian position (x, y, z) |
+| `robot0_eef_quat` | 4 | end-effector orientation as a quaternion |
+| `robot0_gripper_qpos` | 2 | the two Panda finger joint positions |
+| **Total** | **19** | |
+
+So `OBS_DIM = 19` (and `ACT_DIM = 7`, the action). The state captures **where the cube is,
+where the hand is, the spatial relationship between them, and how open the gripper is** —
+everything the policy needs to reach, grasp, and lift.
+
+A couple of relevant notes:
+
+- This is the **low-dim** observation (privileged simulator state), **not images** — which is
+  why this is the `low_dim` dataset variant and the policy is a small MLP, not a vision encoder.
+- The `gripper_to_cube_pos` component (part of the `object` key) is the most directly useful
+  feature for the task — it's the vector the policy effectively follows to home in on the cube.
+- Each of the 19 dims is **normalized** by the dataset mean/std (the `obs_mean`/`obs_std`
+  buffers) before entering the network.
+
+The 7-dim action (`a_BC(s)` in Eq. 1) is detailed under Task 1 ("What BC outputs"): 3 EEF
+position deltas + 3 rotation deltas + 1 gripper command.
+
+---
+
 ## Task 1 — BC training
 
 The frozen backbone. Four decisions:
