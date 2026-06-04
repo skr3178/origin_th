@@ -273,6 +273,33 @@ position/gripper dims is the natural correction. The catch (documented below): o
 `ph` data BC is already near-optimal, so the learned δ has little room to help — hence the
 residual ends up statistically indistinguishable from BC, not a clear win.
 
+### How the residual learns — gradient ascent on the critic
+
+The residual accomplishes correction by **gradient-ascending the critic's value through the
+executed action into δ's weights** — δ moves the action along **`∂Q/∂a`, the critic's
+"better-this-way" direction.** Concretely, the actor objective
+`−λ·Q(s, a_exec) + ‖a_exec − a_demo‖²` differentiates (chain rule) as:
+
+```
+∂(−λQ)/∂θ  =  −λ · (∂Q/∂a) · (∂a_exec/∂δ) · (∂δ/∂θ)
+                    └───┬───┘
+              per-state improvement direction in 7-d action space
+```
+
+The load-bearing factor is **`∂Q/∂a`** — a vector that says "from here, nudge the action *this*
+way to raise predicted success." δ is trained to step the (bounded) action along it, while the
+BC-anchor keeps it near the demos.
+
+**It works exactly to the extent the critic's value surface has real slope.** On all-expert /
+all-success data the critic only ever sees good (expert) actions, so around the demos the
+surface is **flat**: `∂Q/∂a ≈ 0`, δ gets no usable signal, and it settles at **≈BC**. This is
+visible in our diagnostics — `delta_mag` and `actor_loss` flatten early (no uphill to climb),
+while `q_mean` keeps drifting (the critic's *level* inflates, but its *slope* stays
+uninformative). With sub-optimal/exploratory data — or online interaction — the surface would
+have slope, `∂Q/∂a` would point somewhere useful, and the same δ could genuinely beat BC. This
+is also *why the residual needs RL (TD3+BC), not BC*: only the critic produces `∂Q/∂a`, an
+improvement direction; BC would merely re-copy the demonstrated action.
+
 ## Eight decisions
 
 **1. Architecture — δ(s) only (2×128 ReLU MLP).**
@@ -287,18 +314,54 @@ the network output. (Hard-clip would zero gradients at the boundary; a soft pena
 wouldn't give a guarantee.)
 
 **3. Bound magnitude — 0.005 (the scaffold's 0.05 is wrong for this data).**
-Lift is precision-critical, so the bound is the dominant knob. Sweep:
+Lift is precision-critical, so the bound is the dominant knob. Saved sweep (30 rollouts, seed 42):
 
-| bound | settled `delta_mag` | success |
+![Residual bound sweep](out/residual_bound_sweep.png)
+
+| bound | settled mean \|δ\| | success (30 rollouts) |
 |---|---|---|
-| 0.05 | 0.047 (saturated) | 0.00–0.15 ❌ |
-| 0.02 | 0.019 | 0.75 |
-| 0.01 | 0.0095 | 0.85 (≈BC) |
-| **0.005** | **0.0048** | **≈BC (best)** |
+| 0.05 | 0.048 | 0.20 ❌ |
+| 0.02 | 0.019 | 0.60 |
+| 0.01 | 0.0096 | 0.80 |
+| **0.005** (shipped) | **0.0048** | 0.80 |
+| 0.002 | 0.0019 | 0.90 |
 
-Degradation is **monotonic** in the bound — a 0.05 perturbation knocks the gripper off the
-cube. Control test: δ forced to 0 reproduces BC exactly, so the degradation is the δ, not a
-bug. Ship **0.005**.
+Two readings, both visible in the figure: (a) **success degrades monotonically as the bound
+grows** — a 0.05 perturbation knocks the gripper off the cube (0.20), while every *small*
+bound (≤0.01) lands around BC's 0.867 within rollout noise; (b) **`|δ|` tracks the bound line
+almost exactly at every setting (~96% saturation)** — the actor always spends its full budget,
+so the bound *is* the active control. Control test: δ forced to 0 reproduces BC exactly, so
+the collapse at large bounds is the δ, not a bug. We ship **0.005** as a safely-small value
+(0.002 was marginally higher here, but within noise — the point is "keep it small," not the
+exact value).
+
+*What `delta_mag` is.* It's one of the training diagnostics — the **average size of the
+residual nudge**:
+
+```
+delta_mag = mean( |δ_θ(s)| )      # averaged over all 7 action dims and the whole batch
+# in code (section2_residual.py):
+delta_mag = residual.raw_delta(obs).abs().mean().item()
+```
+
+`raw_delta` is the bounded residual `bound · tanh(net(s))`; `.abs()` makes each component
+positive and `.mean()` averages them. So it answers, in one number, *"on average, how big a
+correction is the residual adding to BC's action?"* A `delta_mag` of 0.0048 means the typical
+per-dimension nudge has magnitude ≈ 0.0048 on the `[−1, 1]` action scale.
+
+*Why "~96% saturation" matters.* The settled `delta_mag` sits just under the bound at **every**
+setting:
+
+```
+bound = 0.005  →  delta_mag 0.0048  →  0.0048 / 0.005 = 0.96  ≈ 96%
+bound = 0.05   →  delta_mag 0.047   →  0.047  / 0.05  = 0.94  ≈ 94%
+```
+
+If the actor *wanted* small nudges we'd see `delta_mag` settle well below the bound; instead it
+pushes to ~95% of whatever ceiling it's given. So the actor is budget-hungry (maximizing a
+miscalibrated offline Q rewards larger corrections), and **the bound — not the network — is what
+keeps the nudge small.** That is exactly why picking the bound correctly is the dominant
+decision here.
 
 **4. Algorithm — TD3+BC.**
 Twin critics + delayed actor + target smoothing control Q-overestimation; the **BC-anchor**
@@ -326,9 +389,25 @@ A slowly-moving target network stabilizes the bootstrap. Hard (periodic copy) up
 the target jump and can destabilize the critic on this small, sparse-reward dataset.
 
 **8. Training step count — 10,000.**
-Chosen by reading the diagnostics, not guessing: `q_mean` rises smoothly and stays bounded
-(no divergence), `critic_loss` → ~2e-4, and `delta_mag` is flat by ~2k steps. 10k is
-comfortably past convergence without instability.
+Chosen by reading the diagnostics, not guessing. We ran a step-count ablation — one 40k-step
+run with rollout evals at 5k/10k/20k/40k:
+
+![Residual step-count ablation](out/residual_step_ablation.png)
+
+| steps | success (30 roll) | `q_mean` | `delta_mag` |
+|---|---|---|---|
+| 5k | 0.83 | +0.18 | 0.0049 |
+| 10k (shipped) | 0.80 | +0.38 | 0.0048 |
+| 20k | 0.97 | +0.61 | 0.0047 |
+| 40k | 0.90 | +0.66 | 0.0047 |
+
+The figure makes decision #8 concrete: **`delta_mag` is flat from ~2k steps onward** (the
+*policy* converged early) and **rollout success is flat-within-noise** across all step counts
+(0.80–0.97, no trend, all ≈ BC). The *only* thing that keeps moving is **`q_mean`, drifting
+steadily upward** — that's the critic's value scale inflating, **not** better actions. So more
+training just drifts the critic with no behavioral payoff; 10k is comfortably past policy
+convergence without instability. (This is exactly the "stop when the *policy* converges, not
+when the *critic value* stops moving" lesson.)
 
 ### robomimic reference & hyperparameter provenance
 
@@ -454,6 +533,8 @@ latest. Naming is by the run's defining config (see `out/runs/README.md`).
 | **`main_b0.005`** | The shipped pipeline: frozen BC → TD3+BC residual at **delta_bound = 0.005** → per-dim shield, plus the supporting experiments (BC failure diagnostics, the **clip-in-target ablation**, the **bound sweep** 0.05/0.02/0.01/0.005, and the **BC overfit→failure-mode sweep** at 2/5/20/80 epochs). | BC **0.867**, Residual+Shield **0.800** (within noise); bound is the critical knob; residual ceiling = BC on all-expert data. |
 | **`bc_arch_ablation`** | Task-1 architecture sweep: our **MLP 256×2** vs robomimic's **MLP 1024×2**, a **GMM 5-mode** head, and an **LSTM 400×2** (BC-RNN), 50 rollouts; 4-panel comparison (success, efficiency, overfitting curves, capacity). | 256×2 (0.92, 73k) on the efficiency frontier; 1024×2 (0.78) overfits; GMM=ours (unimodal); LSTM (1.00) marginal at 27× params. No larger arch gives a params-justified gain. |
 | **`bc_failure_taxonomy`** | Task-2 failure categorization at scale: 150 rollouts on the shipped BC and an over-trained BC; failure-mode bars, phase-space scatter, timing. | Shipped fails at grasp/lift (5/6); overfit fails at never_reached (22/30) — failure mode migrates late→early with overfitting; all failures time out (stall, never crash). |
+| **`residual_bound_sweep`** | Decision-#3 evidence: residual success + saturation vs δ-bound (0.05/0.02/0.01/0.005/0.002), 30 rollouts. | Success degrades monotonically with bound (0.05→0.20; ≤0.01→≈BC); \|δ\| saturates ~96% of budget at every bound. |
+| **`residual_step_ablation`** | Decision-#8 evidence: one 40k-step run, evals at 5k/10k/20k/40k; q_mean/delta_mag curves + success. | delta_mag flat by ~2k, success flat-within-noise (0.80–0.97 ≈ BC); only q_mean drifts up → longer training drifts the critic, not the policy. |
 
 Future runs that vary a knob (e.g. a different residual bound, seed, or algorithm) get their
 own snapshot folder — e.g. `b0.010_seed42`, `iql_baseline` — so every run is preserved and
