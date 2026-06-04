@@ -1,0 +1,17 @@
+{
+  "n_rollouts": 30,
+  "seed": 42,
+  "horizon": 400,
+  "per_checkpoint": {
+    "20260604112308/models/model_epoch_100.pth": 0.4666666666666667,
+    "20260604112308/models/model_epoch_120.pth": 0.7333333333333333,
+    "20260604112308/models/model_epoch_20.pth": 0.0,
+    "20260604112308/models/model_epoch_40.pth": 0.1,
+    "20260604112308/models/model_epoch_60.pth": 0.43333333333333335,
+    "20260604112308/models/model_epoch_80.pth": 0.16666666666666666
+  },
+  "best_over_training": 0.7333333333333333,
+  "final_checkpoint_success": 0.16666666666666666,
+  "bc_baseline": 0.867,
+  "residual_iql": 0.922
+}

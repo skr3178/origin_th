@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 *.pyo
 .ipynb_checkpoints/
+
+# Reference material (third-party robomimic clone + paper PDF) — not uploaded.
+references/

@@ -1,0 +1,58 @@
+ROBOMIMIC WARNING(
+    No private macro file found!
+    It is recommended to use a private macro file
+    To setup, run: python /home/satya/anaconda3/envs/origin10x/lib/python3.10/site-packages/robomimic/scripts/setup_macros.py
+)
+found 6 checkpoints
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_quat', 'object', 'robot0_gripper_qpos', 'robot0_eef_pos']
+using obs modality: rgb with keys: []
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+model_epoch_100.pth            success 0.467
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_quat', 'object', 'robot0_gripper_qpos', 'robot0_eef_pos']
+using obs modality: rgb with keys: []
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+model_epoch_120.pth            success 0.733
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_quat', 'object', 'robot0_gripper_qpos', 'robot0_eef_pos']
+using obs modality: rgb with keys: []
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+model_epoch_20.pth             success 0.000
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_quat', 'object', 'robot0_gripper_qpos', 'robot0_eef_pos']
+using obs modality: rgb with keys: []
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+model_epoch_40.pth             success 0.100
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_quat', 'object', 'robot0_gripper_qpos', 'robot0_eef_pos']
+using obs modality: rgb with keys: []
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+model_epoch_60.pth             success 0.433
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_quat', 'object', 'robot0_gripper_qpos', 'robot0_eef_pos']
+using obs modality: rgb with keys: []
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+model_epoch_80.pth             success 0.167
+
+Best-over-training: 0.733   final: 0.167
+(BC 0.867 · residual IQL 0.922)
+saved /home/satya/skr/sensor2sensor/10x/out/bc_rnn_eval.json
