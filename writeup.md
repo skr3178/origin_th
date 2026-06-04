@@ -19,9 +19,9 @@ The frozen backbone. Four decisions:
    regression; no need for depth/conv. **tanh** squashes outputs into the [−1,1] action box so
    the policy can't emit out-of-range actions.
 2. **Loss** — **MSE** to the expert action. This is the MLE objective under a fixed-variance
-   Gaussian policy (robomimic's default BC loss). Valid because lift-ph is single
-   proficient-human → near-unimodal; if it were multimodal we'd switch to a GMM-NLL head to
-   avoid mode-averaging.
+   Gaussian policy, and it is **robomimic's own default BC loss** (see the reference note
+   below). Valid because lift-ph is single proficient-human → near-unimodal; if it were
+   multimodal we'd switch to a GMM-NLL head to avoid mode-averaging.
 3. **Training duration** — capped at 60 epochs but governed by (4); the run stopped at
    **epoch 5**.
 4. **Stopping criterion** — **early stopping on held-out validation MSE**, using the dataset's
@@ -31,6 +31,69 @@ The frozen backbone. Four decisions:
 
 **Result: 86.7% rollout success** (in the 75–90% target band). Then frozen
 (`requires_grad=False`) — never touched again, per the rules.
+
+### Loss function — choice, the robomimic reference, and alternatives
+
+**What robomimic uses (the reference).** Robomimic's deterministic BC (`robomimic/algo/bc.py`,
+`BC._compute_losses`) trains on a *weighted sum* of three regression terms:
+
+```python
+l2_loss  = nn.MSELoss()(actions, a_target)                  # weight 1.0  (default ON)
+l1_loss  = nn.SmoothL1Loss()(actions, a_target)             # weight 0.0  (default OFF)
+cos_loss = cosine_loss(actions[..., :3], a_target[..., :3]) # weight 0.0  (default OFF)
+action_loss = l2_weight*l2_loss + l1_weight*l1_loss + cos_weight*cos_loss
+```
+
+With the shipped defaults (`config/bc_config.py`: `l2_weight=1.0`, `l1_weight=0.0`,
+`cos_weight=0.0`) this collapses to **pure MSE** — so our choice *is* the robomimic default.
+The L1 (SmoothL1/Huber) and cosine-direction (on the EEF delta-position dims) terms are wired
+in but zero-weighted out of the box.
+
+**Other losses robomimic offers** (alternative policy heads, each a `BC` subclass that swaps
+the loss entirely): `BC_Gaussian` (Gaussian NLL, `−log_prob`), `BC_GMM` (mixture-density NLL,
+for multimodal actions), `BC_VAE` (ELBO = reconstruction + β·KL), and the `BC_RNN` /
+`BC_RNN_GMM` / transformer sequence variants.
+
+**Alternatives we considered for lift-ph and why we kept MSE:**
+
+| Loss | When it helps | Verdict here |
+|---|---|---|
+| **MSE / L2** (ours, robomimic default) | unimodal, well-behaved actions | **kept** — matches the data |
+| **Huber / SmoothL1** | robustness to occasional large/outlier action deltas | reasonable ablation; grows linearly past a threshold so it down-weights outliers vs MSE's quadratic. Marginal on clean `ph` data |
+| **+ cosine term on EEF dims** | when reach *direction* matters more than magnitude | optional; our failures are at grasp/lift, not reach direction, so low expected value |
+| **Gaussian NLL** | model per-state action uncertainty | minor upgrade; not needed for a deterministic backbone |
+| **GMM-NLL / CVAE / diffusion** | **multimodal** demos (multiple valid actions per state) | **overkill** for single-human unimodal `ph`; this is the right tool for the multi-human `mh` datasets, not here |
+
+Bottom line: MSE is both the principled choice for near-unimodal `ph` data and the robomimic
+reference default; the distributional heads (GMM/VAE/diffusion) only earn their complexity on
+multimodal data such as `mh`.
+
+### Architecture ablation (backs decisions 1 & 2)
+
+We compared our 256×2 MLP against robomimic's reference architectures — all trained on the
+same split, early-stopped on val loss, evaluated on 50 rollouts (seed 42):
+
+![BC architecture ablation](out/bc_arch_ablation.png)
+
+| Architecture | Success | Params | Takeaway |
+|---|---|---|---|
+| **MLP 256×256** (ours) | 0.92 | **73k** | lowest, most stable val MSE — on the efficiency frontier |
+| MLP 1024×1024 (robomimic) | 0.78 | 1.08M | **overfits 180 demos** — val MSE rises (panel c) |
+| GMM 5-mode | 0.92 | 1.15M | = ours → data is **unimodal** (no benefit) |
+| LSTM 400×2 (BC-RNN) | 1.00 | 1.96M | marginal edge at **27× params** — within noise |
+
+Three conclusions: (1) **bigger MLP is not better** — robomimic's 1024×2, sized for
+full-scale runs, *overfits* lift-ph's 180 demos (panel **c**: its val MSE bottoms then rises,
+while 256×2 stays low). Our 256×2 sits on the efficiency frontier (panel **b**): comparable
+success at **15–27× fewer params**, directly justifying the small architecture. (2) **GMM = MLP**
+confirms the data is unimodal — plain MSE is the right loss (decision 2), no GMM-NLL needed.
+(3) **LSTM** is marginally best (1.00) but not params-justified — object pose is in the obs so
+the task is near-Markovian; temporal context buys at most a noise-level edge at 27× the params.
+
+*Caveat — single seed:* re-running shifted the numbers (256: 0.96→0.92, 1024: 0.62→0.78, LSTM:
+0.98→1.00), so the **robust** claim is "no larger architecture gives a reliable,
+params-justified gain over 256×2," not the exact per-model deltas. (50-rollout numbers, so not
+directly comparable to the 30-rollout 86.7% above — compare the four bars to each other.)
 
 ## Task 2 — BC failure investigation
 
@@ -205,6 +268,7 @@ latest. Naming is by the run's defining config (see `out/runs/README.md`).
 | Run snapshot | What it tests | Key result |
 |---|---|---|
 | **`main_b0.005`** | The shipped pipeline: frozen BC → TD3+BC residual at **delta_bound = 0.005** → per-dim shield, plus the supporting experiments (BC failure diagnostics, the **clip-in-target ablation**, the **bound sweep** 0.05/0.02/0.01/0.005, and the **BC overfit→failure-mode sweep** at 2/5/20/80 epochs). | BC **0.867**, Residual+Shield **0.800** (within noise); bound is the critical knob; residual ceiling = BC on all-expert data. |
+| **`bc_arch_ablation`** | Task-1 architecture sweep: our **MLP 256×2** vs robomimic's **MLP 1024×2**, a **GMM 5-mode** head, and an **LSTM 400×2** (BC-RNN), 50 rollouts; 4-panel comparison (success, efficiency, overfitting curves, capacity). | 256×2 (0.92, 73k) on the efficiency frontier; 1024×2 (0.78) overfits; GMM=ours (unimodal); LSTM (1.00) marginal at 27× params. No larger arch gives a params-justified gain. |
 
 Future runs that vary a knob (e.g. a different residual bound, seed, or algorithm) get their
 own snapshot folder — e.g. `b0.010_seed42`, `iql_baseline` — so every run is preserved and
@@ -214,5 +278,5 @@ comparable, while `out/` continues to hold whichever is latest.
 
 `origin10x` env, from `10x/`: `python scripts/train_bc.py` → `diagnose_bc.py` →
 `train_residual.py` → `ablation_residual.py` → `run_eval.py` → `plot_final_eval.py` →
-`bc_failure_modes.py`. The notebook `origin_assignment_takehome.ipynb` runs the core
-pipeline end-to-end. Each run's artifacts are archived under `out/runs/<descriptor>/`.
+`bc_failure_modes.py` → `bc_arch_ablation.py`. The notebook `origin_assignment_takehome.ipynb`
+runs the core pipeline end-to-end. Each run's artifacts are archived under `out/runs/<descriptor>/`.
