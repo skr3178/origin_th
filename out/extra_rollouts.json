@@ -1,0 +1,25 @@
+{
+  "seed": 42,
+  "n_rollouts": 30,
+  "AWAC": {
+    "success_rate": 0.9333333333333333,
+    "shield_clip_rate": 0.0,
+    "delta_mag_final": 0.004056296776980162,
+    "checkpoint": "out/awac.pt",
+    "video": "out/rollout_awac.mp4"
+  },
+  "IQL": {
+    "success_rate": 0.9333333333333333,
+    "shield_clip_rate": 0.0,
+    "delta_mag_final": 0.004049524199217558,
+    "checkpoint": "out/iql.pt",
+    "video": "out/rollout_iql.mp4"
+  },
+  "BC_RNN": {
+    "first_rollout_success": true,
+    "frames": 51,
+    "checkpoint": "out/bc_rnn/bc_rnn_lift_ph/20260604113956/models/model_epoch_100.pth",
+    "video": "out/rollout_bc_rnn_undertrained.mp4",
+    "note": "undertrained epoch-100 reference; not a converged BC-RNN"
+  }
+}
