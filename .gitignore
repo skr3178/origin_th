@@ -26,3 +26,6 @@ out_viz/
 *.jpeg
 *.gif
 *.pdf
+
+# Packaged submission bundle (binary)
+*.zip
