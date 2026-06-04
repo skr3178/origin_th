@@ -1,0 +1,25 @@
+{
+  "n_rollouts": 30,
+  "seed": 42,
+  "horizon": 400,
+  "num_epochs": 1000,
+  "epoch_every_n_steps": 100,
+  "per_checkpoint": {
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_100.pth": 0.43333333333333335,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_200.pth": 1.0,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_300.pth": 1.0,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_400.pth": 1.0,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_500.pth": 1.0,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_600.pth": 1.0,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_700.pth": 0.9666666666666667,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_800.pth": 0.9666666666666667,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_900.pth": 1.0,
+    "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_1000.pth": 1.0
+  },
+  "best_over_training": 1.0,
+  "best_checkpoint": "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_200.pth",
+  "video": "out/rollout_bc_rnn_converged.mp4",
+  "bc_baseline": 0.867,
+  "residual_iql": 0.922,
+  "undertrained_epoch100": 0.73
+}

@@ -10,5 +10,11 @@ __pycache__/
 # Local-only scratch / inspection material (not deliverables)
 out/smoke_test/
 
+# Converged BC-RNN run: keep only the best/rendered checkpoint (epoch_200, success
+# 1.000) — the other 9 are ~76 MB of near-identical 1.0 weights. Full per-checkpoint
+# success curve is preserved in out/bc_rnn_converged_eval.json.
+out/bc_rnn_converged/**/models/*.pth
+!out/bc_rnn_converged/**/models/model_epoch_200.pth
+
 # Reference material (third-party robomimic clone + paper PDF) — not uploaded.
 references/
