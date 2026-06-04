@@ -302,6 +302,13 @@ improvement direction; BC would merely re-copy the demonstrated action.
 
 ## Eight decisions
 
+The brief asks for *"at least one ablation."* **All eight decisions below are now backed by an
+empirical run, not just an argument** — each carries its own script + plot in `out/` (and the
+two whose "right answer" is most load-bearing, #3 bound and #6 clip-in-target, are the headline
+ones). Decisions whose outcome is a foregone conclusion (#1 architecture, #2 activation) were
+run anyway and confirm the argument; the substantive knobs (#3 bound, #4 algorithm) are where
+the result actually moves.
+
 **1. Architecture — δ(s) only (2×128 ReLU MLP) — *ablated, confirmed*.**
 The residual conditions on state alone. `a_BC(s)` is a *deterministic* function of `s`, so
 feeding it as an extra input adds no information. A small head suffices because it only has
@@ -320,11 +327,26 @@ and costs +896 params — exactly the "provably redundant" outcome the argument 
 MLP on `s` can already recover `a_BC(s)` internally). So δ(s) is kept: same behavior, fewer
 parameters. (`scripts/ablation_architecture.py` → `out/ablation_architecture.{png,json}`.)
 
-**2. Activation on δ — `tanh × delta_bound`.**
+**2. Activation on δ — `tanh × delta_bound` — *ablated, confirmed*.**
 Smooth and **hard-bounded by construction**: the residual is mathematically guaranteed to
 lie in `[−bound, +bound]` per dim, so it can never exceed its safety budget regardless of
 the network output. (Hard-clip would zero gradients at the boundary; a soft penalty
-wouldn't give a guarantee.)
+wouldn't give a guarantee.) We **ran all three** anyway — same config (bound 0.005, seed 42,
+30-rollout eval), only the bounding function differs:
+
+| activation on δ | success | settled `delta_mag` | clip |
+|---|---|---|---|
+| **tanh × bound** (shipped) | 0.800 | 0.0050 | 0.061 |
+| hard clip `clamp(f, ±bound)` | 0.800 | 0.0049 | 0.059 |
+| softsign × bound | 0.800 | 0.0048 | 0.064 |
+
+A **dead heat** — identical success, identical (saturated) `delta_mag`, identical clip rate.
+The theoretical concern (hard-clip zeros the gradient once δ saturates, and δ *does* sit at
+~96% of the bound) **doesn't bite here**: the BC anchor + tiny bound pin δ near the demos
+regardless of how it's squashed, so the actor never relies on boundary gradients. tanh×bound
+is kept on principle — smooth gradient *and* a hard guarantee, the strict superset of the
+other two — but on this data the choice is empirically free.
+(`scripts/ablation_activation.py` → `out/ablation_activation.{png,json}`.)
 
 **3. Bound magnitude — 0.005 (the scaffold's 0.05 is wrong for this data).**
 Lift is precision-critical, so the bound is the dominant knob. Saved sweep (30 rollouts, seed 42):

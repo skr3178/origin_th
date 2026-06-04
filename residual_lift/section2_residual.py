@@ -64,11 +64,17 @@ class ResidualPolicy(nn.Module):
     can already recover it internally, so this should add no information (we verify).
     """
     def __init__(self, bc_policy, act_dim=ACT_DIM, delta_bound=DELTA_BOUND, hidden=128,
-                 condition_on_bc=False):
+                 condition_on_bc=False, activation="tanh"):
         super().__init__()
         self.bc = bc_policy           # MUST stay frozen
         self.delta_bound = delta_bound
         self.condition_on_bc = condition_on_bc
+        # decision-#2 ablation: how δ is bounded.
+        #   "tanh"     -> bound * tanh(f)      smooth, hard per-dim bound (shipped)
+        #   "clip"     -> clamp(f, ±bound)     hard bound, ZERO gradient when saturated
+        #   "softsign" -> bound * softsign(f)  smooth, softer/slower saturation
+        assert activation in ("tanh", "clip", "softsign"), activation
+        self.activation = activation
         in_dim = OBS_DIM + (act_dim if condition_on_bc else 0)
         self.delta_net = nn.Sequential(
             nn.Linear(in_dim, hidden), nn.ReLU(),
@@ -84,7 +90,12 @@ class ResidualPolicy(nn.Module):
         z = (obs - self.obs_mean) / self.obs_std
         if self.condition_on_bc:
             z = torch.cat([z, self.bc(obs).detach()], dim=-1)  # a_BC(s) already in [-1,1]
-        return self.delta_bound * torch.tanh(self.delta_net(z))
+        f = self.delta_net(z)
+        if self.activation == "clip":
+            return torch.clamp(f, -self.delta_bound, self.delta_bound)
+        if self.activation == "softsign":
+            return self.delta_bound * F.softsign(f)
+        return self.delta_bound * torch.tanh(f)
 
     def forward(self, obs):
         """Executed action: clip(a_BC(s) + delta(s), -1, +1). a_BC is frozen/detached."""
@@ -125,7 +136,8 @@ class QCritic(nn.Module):
 
 def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, log_every=500,
                    alpha=ALPHA, delta_bound=DELTA_BOUND, save=True, seed=42,
-                   reward_shaping=False, shape_coef=1.0, condition_on_bc=False):
+                   reward_shaping=False, shape_coef=1.0, condition_on_bc=False,
+                   activation="tanh"):
     """Train the residual with TD3+BC on top of a frozen `bc_policy`.
 
     alpha controls the TD3+BC Q-vs-BC trade-off: larger -> trust the offline Q
@@ -140,8 +152,10 @@ def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, lo
     obs_mean, obs_std = bc_policy.obs_mean, bc_policy.obs_std
     bound = delta_bound
 
-    residual        = ResidualPolicy(bc_policy, delta_bound=bound, condition_on_bc=condition_on_bc).to(DEVICE)
-    residual_target = ResidualPolicy(bc_policy, delta_bound=bound, condition_on_bc=condition_on_bc).to(DEVICE)
+    residual        = ResidualPolicy(bc_policy, delta_bound=bound, condition_on_bc=condition_on_bc,
+                                     activation=activation).to(DEVICE)
+    residual_target = ResidualPolicy(bc_policy, delta_bound=bound, condition_on_bc=condition_on_bc,
+                                     activation=activation).to(DEVICE)
     residual_target.load_state_dict(residual.state_dict())
     q_critic        = QCritic(obs_mean, obs_std).to(DEVICE)
     target_q_critic = QCritic(obs_mean, obs_std).to(DEVICE)
