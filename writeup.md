@@ -588,13 +588,15 @@ Two published laws this establishes, both of which we reproduce **qualitatively*
    flip side of "no headroom on expert data," and exactly why we say beating BC would need
    sub-optimal/exploratory data.
 
-**Quantitative match — no (and that's expected).** Our absolute numbers are lower than their
-~100%:
+**Quantitative match — no (and that's expected).** Side-by-side (Lift, low-dim, PH):
 
-| Method | Paper (PH) | Ours |
-|---|---|---|
-| BC | 100.0 | 86.7 (26/30) |
-| offline-RL residual | BCQ 100.0 / CQL 92.7 | TD3+BC 0.922 · AWAC 0.900 · IQL 0.922 |
+| Method | Paper (Table 1, PH) | Ours | Match? |
+|---|---|---|---|
+| BC | 100.0 | 86.7 (26/30) | same regime, ~13 pts lower |
+| Offline RL (paper: BCQ / CQL) | BCQ 100.0, CQL 92.7 | — | — |
+| Our offline RL: TD3+BC | — | 0.922 (0.93 / 0.97 / 0.87) | ties BC (NS) |
+| AWAC | — | 0.900 | ties BC (NS) |
+| IQL | — | 0.922 | ties BC (NS) |
 
 The ~13-pt gap is **methodological, not a bug** (their *plain* BC also hits 100, so it isn't
 RNN-vs-MLP): (a) the paper evaluates **every checkpoint online and reports the best per run**
