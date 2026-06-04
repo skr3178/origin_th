@@ -1,0 +1,7 @@
+BC architecture ablation (lift-ph, 50 rollouts, seed 42)
+
+variant                   success      params   val_loss  epochs
+MLP 256x256 (ours)          0.920      72,711     0.0216      15
+MLP 1024x1024 (robomimic)    0.780   1,077,255     0.0226      11
+GMM 5-mode (1024x1024)      0.920   1,146,955    -9.8658      25
+LSTM 400x2 (BC-RNN)         1.000   1,959,607     0.0235      20

@@ -1,38 +1,8 @@
-# Code-only repo — exclude data, model checkpoints, videos, plots, and caches.
+# Full-folder mirror — track everything (data, videos, checkpoints, plots, pdf,
+# zip). Only Python bytecode caches are excluded (auto-regenerated, never useful
+# to commit).
 
-# Python caches
 __pycache__/
 *.pyc
 *.pyo
 .ipynb_checkpoints/
-
-# Dataset (auto-downloaded by the notebook / data pipeline)
-data/
-*.hdf5
-*.h5
-
-# Generated artifacts
-out/*
-out_viz/
-*.pt
-*.pth
-*.ckpt
-
-# Binary media / docs
-*.mp4
-*.avi
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.pdf
-
-# Packaged submission bundle (binary)
-*.zip
-
-# Exception: plots referenced by writeup.md (so they render on GitHub)
-!out/bc_diag_outcomes.png
-!out/bc_diag_lift_traces.png
-!out/residual_ablation_clip.png
-!out/residual_training_curves.png
-!out/final_eval_comparison.png

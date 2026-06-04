@@ -30,7 +30,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from .config import OBS_DIM, ACT_DIM, DEVICE, RESIDUAL_CKPT
@@ -114,16 +113,18 @@ class QCritic(nn.Module):
 
 
 def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, log_every=500,
-                   alpha=ALPHA, delta_bound=DELTA_BOUND, save=True):
+                   alpha=ALPHA, delta_bound=DELTA_BOUND, save=True, seed=42):
     """Train the residual with TD3+BC on top of a frozen `bc_policy`.
 
     alpha controls the TD3+BC Q-vs-BC trade-off: larger -> trust the offline Q
     more (more aggressive residual); smaller -> stay closer to the demo/BC action.
     ablate_clip_in_target=True disables decision #6 (clipping the target action to
     the executable set) to demonstrate the resulting Q overestimation.
+    seed sets the training RNG (default 42, the shipped run); vary it for multi-seed
+    robustness checks.
     Returns (residual, history) and saves to RESIDUAL_CKPT (unless ablating or save=False).
     """
-    torch.manual_seed(42); np.random.seed(42)
+    torch.manual_seed(seed); np.random.seed(seed)
     obs_mean, obs_std = bc_policy.obs_mean, bc_policy.obs_std
     bound = delta_bound
 
@@ -137,16 +138,16 @@ def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, lo
     actor_opt  = torch.optim.Adam(residual.delta_net.parameters(), lr=ACTOR_LR)
     critic_opt = torch.optim.Adam(q_critic.parameters(),           lr=CRITIC_LR)
 
-    loader = DataLoader(LiftPHDataset(), batch_size=BATCH_SIZE,
-                        shuffle=True, num_workers=0, drop_last=True)
-    it = iter(loader)
-
-    def next_batch():
-        nonlocal it
-        try:
-            return next(it)
-        except StopIteration:
-            it = iter(loader); return next(it)
+    # GPU-resident replay: the whole dataset (~0.7 MB) lives on the GPU once, and
+    # batches are drawn with a single randint index — no DataLoader, no per-step
+    # CPU->GPU copy. Removes the host-side batch overhead (~1.6 ms/step here).
+    _ds = LiftPHDataset()
+    obs_all      = _ds.obs.to(DEVICE)
+    action_all   = _ds.actions.to(DEVICE)
+    reward_all   = _ds.rewards.to(DEVICE).unsqueeze(-1)
+    next_obs_all = _ds.next_obs.to(DEVICE)
+    done_all     = _ds.dones.to(DEVICE).unsqueeze(-1)
+    n_trans = obs_all.shape[0]
 
     history = {k: [] for k in ["step", "q_mean", "delta_mag", "critic_loss", "actor_loss"]}
     last_actor_loss = float("nan")
@@ -154,12 +155,12 @@ def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, lo
     tag = "ABLATION(no-clip)" if ablate_clip_in_target else "TD3+BC"
 
     for step in tqdm(range(steps), desc=f"residual {tag}"):
-        batch    = next_batch()
-        obs      = batch["obs"].to(DEVICE)
-        action   = batch["action"].to(DEVICE)         # demo action a_demo
-        reward   = batch["reward"].to(DEVICE).unsqueeze(-1)
-        next_obs = batch["next_obs"].to(DEVICE)
-        done     = batch["done"].to(DEVICE).unsqueeze(-1)
+        idx      = torch.randint(0, n_trans, (BATCH_SIZE,), device=DEVICE)
+        obs      = obs_all[idx]
+        action   = action_all[idx]                    # demo action a_demo
+        reward   = reward_all[idx]
+        next_obs = next_obs_all[idx]
+        done     = done_all[idx]
 
         # --- Critic update ---
         with torch.no_grad():
