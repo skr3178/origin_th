@@ -730,6 +730,15 @@ is well-behaved and clamps hard when it isn't — exactly the real-world instinc
 
 ## Task 5 — Final eval (BC vs Residual+Shield, 30 rollouts, seed 42, same starts)
 
+![BC vs Residual+Shield — paired-flip rollouts](out/rollout_bc_vs_residual.gif)
+
+*The two flips that make up the near-wash, on identical seed-42 starts (left column = BC,
+right = Residual+Shield). **Top:** a start where the residual **fixes** a BC failure (BC
+stalls before the grasp, Residual+Shield lifts). **Bottom:** a start where it **breaks** a BC
+success (BC lifts, the residual's nudge spoils the grasp). This is the +1-fixed / −3-broke
+paired analysis below made visual — same-direction enough that the net is within sampling
+noise. (Full-res MP4: `out/rollout_bc_vs_residual.mp4`.)*
+
 ![Final eval comparison](out/final_eval_comparison.png)
 
 Because both policies run from the same seed (identical cube starts), we compare them
