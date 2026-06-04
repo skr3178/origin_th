@@ -693,10 +693,25 @@ low  = [-1.000  -0.621  -1.000  -0.164  -0.163  -0.567  -1.000]
 high = [ 1.000   0.713   1.000   0.132   0.327   0.514   1.000]
 ```
 
-**Decision 1 — margin (5% of per-dim span).** Numbers from the data, not vibes: the margin
-gives the learned residual a little head-room beyond exactly-seen actions (so we don't clip
-*valid* in-distribution corrections) while still catching gross outliers. Clamping to ±1
-means dims already at the limit (0/2/6) get no spurious expansion.
+**Decision 1 — margin (5% of per-dim span) — *swept, not guessed*.** Numbers from the data,
+not vibes: the margin gives the learned residual a little head-room beyond exactly-seen actions
+(so we don't clip *valid* in-distribution corrections) while still catching gross outliers.
+Clamping to ±1 means dims already at the limit (0/2/6) get no spurious expansion. We **swept**
+the margin on the shipped residual (seed 42, 30 rollouts, no retrain):
+
+![Task-4 shield margin sweep](out/ablation_shield_margin.png)
+
+| margin_frac | 0.00 | **0.05** (shipped) | 0.10 | 0.20 | 0.50 |
+|---|---|---|---|---|---|
+| success | 0.800 | 0.800 | 0.800 | 0.800 | 0.800 |
+| clip rate | 0.066 | 0.063 | 0.060 | 0.056 | 0.048 |
+
+**Success is flat across the whole range**; the margin only trades off **clip rate** (how often
+the shield intervenes), falling monotonically as the box widens. So the margin is an
+*intrusiveness* knob, not a *performance* knob — even the tightest box (margin 0, exact demo
+min/max) only clips 6.6% and costs no success, because the bounded residual rarely leaves the
+demo box anyway. 5% is a safe, barely-intrusive default sitting flat on this curve.
+(`scripts/ablation_shield_margin.py` → `out/ablation_shield_margin.{png,json}`.)
 
 **Decision 2 — per-dimension, not a global L2 norm.** The action dims are **heterogeneous**:
 dims 0/2/6 use the full ±1 range (std 0.26/0.49/0.91) while the rotation dims 3/4/5 barely
