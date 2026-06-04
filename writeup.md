@@ -486,6 +486,11 @@ keep the residual at BC regardless of what Q "wants." So on this data the *rewar
 matters* — the bound and the all-expert data are the binding constraints, not the reward.
 (`scripts/ablation_reward_shaping.py` → `out/ablation_reward_shaping.{png,json}`.)
 
+*One-line takeaway:* the reward signal isn't the bottleneck here. What limits the robot is
+(a) the demos are already expert, and (b) we only let it nudge a tiny bit — **not** what
+reward we feed it. The experiment proves that by changing the reward and watching nothing
+happen to the result.
+
 **6. Clip δ inside the target Q — YES (there is a right answer).**
 The target action must be the **executable** action (residual bounded, sum clipped to
 [−1,1]). Not clipping evaluates Q at actions the policy can never take → out-of-distribution
