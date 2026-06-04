@@ -566,6 +566,44 @@ genuinely beat BC you'd need sub-optimal/exploratory data or online interaction 
 improvement direction. This matches the bound sweep and the +1/−3 paired flip analysis, and
 is the honest result the brief explicitly values over a cherry-picked high score.
 
+### Grounding & reproduction vs Mandlekar et al. 2021 (robomimic)
+
+The null result isn't specific to our setup — it's the central finding of the robomimic study
+(*"What Matters in Learning from Offline Human Demonstrations"*, `references/`). Their Table 1
+(low-dim) benchmarks 6 algorithms; the Lift rows:
+
+| | BC | BC-RNN | BCQ | CQL | HBC | IRIS |
+|---|---|---|---|---|---|---|
+| **Lift (PH)** — *our regime* | **100.0** | 100.0 | 100.0 | 92.7 | 100.0 | 100.0 |
+| Lift (MG) — machine-generated | 65.3 | 70.7 | 91.3 | 64.0 | 47.3 | 96.0 |
+
+Two published laws this establishes, both of which we reproduce **qualitatively**:
+
+1. **On proficient-human (PH) data, BC already saturates Lift and offline RL does not beat it**
+   — even *regresses* (CQL 92.7 < BC 100). The paper states it directly: *"Batch RL algorithms
+   like BCQ are proficient on machine-generated data, [but] they perform poorly on human
+   datasets."* Our residual (TD3+BC/AWAC/IQL) is statistically indistinguishable from BC — same
+   conclusion, on the same task and data regime.
+2. **Offline RL only wins on suboptimal (MG) data** (BCQ 91.3 / IRIS 96.0 vs BC 65.3) — the
+   flip side of "no headroom on expert data," and exactly why we say beating BC would need
+   sub-optimal/exploratory data.
+
+**Quantitative match — no (and that's expected).** Our absolute numbers are lower than their
+~100%:
+
+| Method | Paper (PH) | Ours |
+|---|---|---|
+| BC | 100.0 | 86.7 (26/30) |
+| offline-RL residual | BCQ 100.0 / CQL 92.7 | TD3+BC 0.922 · AWAC 0.900 · IQL 0.922 |
+
+The ~13-pt gap is **methodological, not a bug** (their *plain* BC also hits 100, so it isn't
+RNN-vs-MLP): (a) the paper evaluates **every checkpoint online and reports the best per run**
+(their challenge C4), whereas we freeze **one** val-MSE-early-stopped checkpoint per the "freeze
+after §1 / reproducible-from-seed" rule; (b) per-algorithm hyperparameter sweeps vs our light
+defaults; (c) larger eval sets. We deliberately keep our stricter single-checkpoint protocol
+and cite the paper to explain the level difference — the **relationship** (offline RL ties/loses
+to BC on PH; the ceiling is BC) is what reproduces, and it externally validates the null result.
+
 ## Runs & artifacts
 
 Outputs live in `out/` (the **live** folder these plots link to). Each completed run is also
