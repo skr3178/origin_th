@@ -7,5 +7,8 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/
 
+# Local-only scratch / inspection material (not deliverables)
+out/smoke_test/
+
 # Reference material (third-party robomimic clone + paper PDF) — not uploaded.
 references/
