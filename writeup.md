@@ -647,6 +647,27 @@ defaults; (c) larger eval sets. We deliberately keep our stricter single-checkpo
 and cite the paper to explain the level difference — the **relationship** (offline RL ties/loses
 to BC on PH; the ceiling is BC) is what reproduces, and it externally validates the null result.
 
+#### BC-RNN reference run (our reproduction — *undertrained*, reported honestly)
+
+To put a number on the paper's flagship human-data method on *our* exact setup, we trained
+robomimic's **BC-RNN** (paper-faithful: LSTM `hidden_dim=400`, GMM head, `seq_length=10`,
+`lr=1e-4`) on Lift-PH via robomimic, and evaluated each checkpoint in *our* robosuite harness
+(30 rollouts, seed 42). Scripts: `scripts/build_bc_rnn_config.py`, `scripts/eval_bc_rnn.py`.
+
+| BC-RNN checkpoint | epoch 20 | 40 | 60 | 80 | 100 | 120 | best |
+|---|---|---|---|---|---|---|---|
+| success | 0.00 | 0.10 | 0.43 | 0.17 | 0.47 | 0.73 | **0.73** |
+
+**Read this as a floor, not BC-RNN's true performance.** Success is **monotonically climbing**
+and was still rising at our cutoff — the textbook signature of an **undertrained** model. We
+capped training at **120 epochs** to keep the run short, whereas the paper trains **2,000
+epochs**; BC-RNN optimizes a GMM-NLL over sequences (far slower than our MLP's MSE, which
+converged in ~165 steps). So the gap to the paper's 100% — and to our own BC (0.867) / IQL
+(0.922) — is a **training-budget artifact, not evidence that BC-RNN is worse**. We deliberately
+do **not** claim a head-to-head win over BC-RNN; a converged (~2000-epoch) run would be needed
+for that, and the paper already reports it reaches 100%. (Eval: `out/bc_rnn_eval.json`;
+checkpoint: `out/bc_rnn/.../model_epoch_100.pth`.)
+
 ## Runs & artifacts
 
 Outputs live in `out/` (the **live** folder these plots link to). Each completed run is also
