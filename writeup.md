@@ -335,6 +335,23 @@ the collapse at large bounds is the δ, not a bug. We ship **0.005** as a safely
 (0.002 was marginally higher here, but within noise — the point is "keep it small," not the
 exact value).
 
+*Multi-seed confirmation that 0.002 vs 0.005 is within noise (not inferred — measured).* We
+re-ran both bounds at 3 training seeds each (10k steps, eval seed 42):
+
+![Bound 0.002 vs 0.005 — 3 seeds](out/residual_bound_seedcheck.png)
+
+| bound | per-seed success | mean | std |
+|---|---|---|---|
+| 0.002 | 0.833 / 0.900 / 0.900 | 0.878 | 0.038 |
+| 0.005 | 0.933 / 0.967 / 0.867 | 0.922 | 0.051 |
+
+The **per-seed ranking flips** (0.005 wins seeds 0–1, 0.002 wins seed 2), and the means
+**reverse** the original single-seed table (there 0.002 0.90 > 0.005 0.80; here 0.005 0.92 >
+0.002 0.88) — so the original ordering was seed-luck. The difference is not significant
+(Welch t p = 0.30; pooled 79/90 vs 83/90, Fisher p = 0.46), and both clusters straddle BC's
+0.867. Confirms the defense: **within the small regime the exact bound is noise; "keep it
+small" is the real finding.** (`scripts/seed_check_bound.py` → `out/residual_bound_seedcheck.{png,json}`.)
+
 *What `delta_mag` is.* It's one of the training diagnostics — the **average size of the
 residual nudge**:
 
