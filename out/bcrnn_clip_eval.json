@@ -1,0 +1,13 @@
+{
+  "checkpoint": "out/bc_rnn_converged/bc_rnn_lift_ph_converged/20260604160824/models/model_epoch_200.pth",
+  "n_rollouts": 30,
+  "seed": 42,
+  "horizon": 400,
+  "success_rate": 1.0,
+  "n_success": 30,
+  "mean_steps_on_success": 42.4,
+  "p99_latency_ms": 4.709820941544133,
+  "shield_clip_rate": 0.4661949685534591,
+  "n_clipped_steps": 593,
+  "n_total_steps": 1272
+}

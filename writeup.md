@@ -594,6 +594,34 @@ except where the residual framing demands otherwise.
 - **`actor_loss`** — `−λ·Q1(s, a_exec) + MSE(a_exec, a_demo)`. Decreased steadily — the
   actor raises Q while the BC-anchor holds it near demonstrated actions.
 
+### Same four diagnostics for AWAC and IQL
+
+The cross-algorithm variants log the **identical four signals** (`q_mean`, `delta_mag`,
+`critic_loss`, `actor_loss`) via the shared `_hist`/`_log` in `residual_lift/algorithms.py`,
+so the comparison is like-for-like. Per-algorithm 4-panel curves (seed 0, 10k steps):
+
+![AWAC residual training diagnostics](out/algo_diag_awac.png)
+![IQL residual training diagnostics](out/algo_diag_iql.png)
+![AWAC vs IQL diagnostics overlay](out/algo_diag_overlay.png)
+
+What the curves show, read against the same four checks:
+
+- **`q_mean`** — rises **smoothly and stays bounded** for both (AWAC from ≈−0.1 to ≈+0.3, IQL
+  from ≈0 to ≈+0.5). No runaway — the no-divergence health check passes regardless of algorithm.
+  IQL's level climbs higher (expectile value target) but its actor **never queries Q off-data**,
+  which is exactly why its shield clip rate is **0.000**.
+- **`delta_mag`** — settles **≈0.004, just under the 0.005 bound** for both — the *same*
+  ~budget-saturation signature as TD3+BC. The bound, not the algorithm, is the active constraint.
+- **`critic_loss`** — drops to **~1e-3 → near-zero**; sparse near-expert targets are easy to fit
+  under any of the three critics.
+- **`actor_loss`** — AWAC's advantage-weighted regression and IQL's AWR policy-extraction both
+  **decrease and flatten**, mirroring TD3+BC: the actor has little uphill to climb on all-expert
+  data, so δ stays small and near the demos.
+
+The takeaway reinforces the null result: across three different offline-RL actors the four
+diagnostics tell the **same story** — bounded `q_mean`, budget-saturated `delta_mag`, trivially-fit
+critic, quiet actor — so the algorithm choice is not what limits performance; the data is.
+
 ## Task 4 — Safety shield
 
 **Per-dimension clipping to bounds learned from data + a margin.** Bounds = each dim's
@@ -644,6 +672,31 @@ failures but *broke* 3 — a near-wash, net −2 rollouts, i.e. within sampling 
 panels: (a) success-rate bars; (b) per-rollout outcome matrix with flip markers; (c) episode
 length (failures run the full 400-step horizon — they time out, never crash); (d) inference
 latency (both ≪ the 20 Hz / 50 ms budget; the single ~37 ms point is first-step warmup).
+
+### Extended — folding AWAC/IQL into the same harness
+
+`scripts/task5_extended.py` loads the four **frozen** checkpoints (`bc.pt`, `residual.pt`=TD3+BC,
+`awac.pt`, `iql.pt`) and runs the *identical* Task-5 protocol — 30 rollouts, seed 42 (same cube
+starts), shield in the loop for every residual — **no retraining**. It widens the head-to-head
+from 2 policies to 4 and writes `out/task5_extended_comparison.png` + `out/task5_extended.json`.
+
+| Policy | success | clip rate | flips vs BC |
+|---|---|---|---|
+| BC | 0.833 (25/30) | — | — |
+| TD3+BC | 0.800 (24/30) | 0.063 | +2 / −3 |
+| AWAC | 0.933 (28/30) | **0.000** | +3 / −0 |
+| IQL | 0.933 (28/30) | **0.000** | +3 / −0 |
+
+**Read this as one noisy seed-42 sample, not an AWAC/IQL win.** TD3+BC reproduces the canonical
+line exactly (0.800, clip 0.063). BC itself drifted by one rollout here (0.833 vs the 0.867 above)
+— not a bug (the BC weights embedded in every residual checkpoint are byte-identical to `bc.pt`),
+but GPU nondeterminism flipping a single borderline cube-lift. That ±1-rollout wobble in the
+*baseline* is exactly the noise the AWAC/IQL "+3/−0" sits inside, and it is consistent with the
+3-seed test above where AWAC/IQL vs TD3+BC came back **not significant** (Welch p = 0.53, 1.00). So
+the success story is unchanged: **all four tie within noise on all-expert data.** The one durable,
+low-variance signal is the **shield clip rate** — TD3+BC 0.063 vs AWAC/IQL 0.000 — a real
+behavioral difference (the no-OOD-query actors never push an action out of the demo envelope), not
+a coin flip.
 
 ---
 
@@ -726,7 +779,19 @@ seed 42, checkpoint every 100, each scored in our harness; `scripts/build_bc_rnn
 | success | 0.43 | **1.00** | 1.00 | 1.00 | 1.00 | 1.00 | 0.97 | 0.97 | 1.00 | 1.00 | **1.00** |
 
 **Best-over-training = 1.00**, saturating by **epoch 200** (well before the paper's 2,000 — Lift
-is the easiest robomimic task). This does two things. (1) It confirms the undertrained 0.73 was a
+is the easiest robomimic task).
+
+**Our epochs are the paper's epochs — apples-to-apples.** We used robomimic's default epoch clock
+(`epoch_every_n_steps=100`, `batch_size=100`), which is *identical* to the paper's BC-RNN config.
+So our "epoch 200" **is** the paper's "epoch 200" = **20,000 gradient steps** — not a rescaled or
+shorter epoch. This makes the comparison exact: on the same clock the paper uses, Lift-PH converges
+to 1.00 at epoch 200, and the paper's 2,000 is a single **benchmark-wide budget sized for the
+hardest tasks** (Transport, Tool Hang), not a Lift requirement — with best-checkpoint-over-training
+selection, the extra 1,800 epochs never change Lift's reported number. We reproduce the paper's
+100% at **1/10th** the epochs precisely because the task is easy, which strengthens rather than
+weakens the reproduction.
+
+This does two things. (1) It confirms the undertrained 0.73 was a
 **pure training-budget artifact**, not evidence BC-RNN is worse and not a setup bug. (2) More
 importantly, it **externally validates our eval harness**: our robosuite/eval pipeline reproduces
 Mandlekar et al.'s published Lift-PH result to the decimal, which retroactively grounds every
@@ -735,6 +800,41 @@ number measured in the same harness (BC 0.867, TD3+BC 0.922, IQL 0.922). The cor
 at that ceiling alongside our residuals. (Converged eval: `out/bc_rnn_converged_eval.json`; rollout
 video from the epoch-200 checkpoint: `out/rollout_bc_rnn_converged.mp4`. Undertrained reference:
 `out/bc_rnn_eval.json`, `out/bc_rnn/.../model_epoch_100.pth`.)
+
+**BC-RNN under our shield — and why its clip rate is *not* comparable to the residuals'.** The
+residual trio and BC-RNN belong to two different families, which is the key to reading the clip
+numbers:
+
+```
+bc.pt (frozen MLP)
+ ├─ + δ_TD3BC   → residual.pt   ┐
+ ├─ + δ_AWAC    → awac.pt       ├─ same backbone, share bc.pt
+ └─ + δ_IQL     → iql.pt        ┘
+BC-RNN  → bc_rnn .../model_epoch_200.pth   ← independent, ignores bc.pt
+```
+
+The residuals are a *frozen `bc.pt` plus a bounded δ*; BC-RNN is a *standalone LSTM* that never
+touches `bc.pt`. Running the same policy-agnostic shield (clip-to-demo-envelope + NaN guard) on the
+converged epoch-200 BC-RNN — same protocol, 30 rollouts, seed 42, shield in the loop
+(`scripts/eval_bcrnn_clip.py` → `out/bcrnn_clip_eval.json`):
+
+| metric | BC-RNN (epoch 200) |
+|---|---|
+| success_rate (under shield) | **1.000** (30/30) |
+| shield_clip_rate | **0.466** (593/1272 steps) |
+| mean_steps (on success) | 42.4 |
+| p99 latency (ms) | 4.71 |
+
+Two takeaways. (1) The 0.47 clip rate is an order of magnitude above the residuals' (0.00–0.06) —
+**expected, not a fairness violation**: the residuals inherit `bc.pt`'s tightly demo-fit actions
+(in-envelope by construction, so a ±0.005 δ rarely escapes), whereas BC-RNN learned its own action
+style anchored to nothing of ours and routinely sits outside the demo-derived per-dim bounds (most
+likely the narrow rotation dims 3/4/5, bounds as tight as ±0.13–0.16). So **clip rate measures
+distributional match to the demo envelope, not safety/quality, and is only comparable *within* the
+shared-`bc.pt` family** — putting BC-RNN's 0.47 head-to-head against AWAC/IQL's 0.00 would be
+apples-to-oranges. (2) Even with ~half its steps clipped back to the envelope, BC-RNN still succeeds
+30/30 and faster (42 vs BC's 56 steps): clipping a strong, out-of-envelope policy toward the demos
+doesn't break it.
 
 ## Runs & artifacts
 
