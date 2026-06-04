@@ -1,8 +1,8 @@
 """Section 3 — Safety shield.
 
 A minimal, production-flavoured shield: per-dimension clipping to bounds learned
-from the training data, with a margin. (A real shield would also rate-limit and
-handle NaNs; clip-only is in scope here.)
+from the training data, with a margin, plus a NaN/Inf guard. (A real shield would
+also rate-limit; clip-only + NaN guard is in scope here.)
 
 Decisions (defended in notes.md):
   1. Margin — bounds = per-dim demo-action [min, max] expanded by MARGIN_FRAC of the
@@ -28,6 +28,10 @@ class SafetyShield:
         self.high = np.asarray(act_high, dtype=np.float32)
 
     def __call__(self, action, prev_action=None):
+        # NaN/Inf guard first: a non-finite action must never reach the env. Replace
+        # any non-finite entry with 0.0 (a safe neutral action) before clipping —
+        # np.clip alone would pass NaN straight through.
+        action = np.nan_to_num(action, nan=0.0, posinf=0.0, neginf=0.0)
         return np.clip(action, self.low, self.high)
 
 

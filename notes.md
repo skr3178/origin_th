@@ -132,10 +132,12 @@ the bound-sweep curve exactly and is the honest result the brief invites.
 - **Margin rationale**: 5% of each dim's data span gives the learned residual head-room
   beyond exactly-seen actions (don't clip valid in-distribution corrections) while still
   catching gross outliers.
-- **Clip rate**: **0.0%** with the shipped 0.005 residual (δ never leaves the data box →
-  shield is a non-intrusive safety net), vs **37%** measured on the broken 0.05 residual —
-  the shield correctly stays out of the way when the policy is well-behaved and would
-  clamp hard if it weren't.
+- **Clip rate**: **6.3%** of steps with the shipped 0.005 residual (re-measured over the
+  30-rollout seed-42 eval → shield is a non-intrusive safety net), vs **37%** measured on
+  the broken 0.05 residual — the shield correctly stays out of the way when the policy is
+  well-behaved and would clamp hard if it weren't.
+- **NaN/Inf guard**: actions are passed through `np.nan_to_num` (→ 0.0) before clipping, so
+  a non-finite policy output can never reach the env (`np.clip` alone passes NaN through).
 
 ## Task 5 — Final eval  (`section4_eval.py`, prefilled)
 BC vs Residual+Shield, 30 rollouts, seed 42 (same starts). Videos saved to

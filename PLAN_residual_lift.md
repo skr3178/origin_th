@@ -86,7 +86,7 @@ Bullet rationale per decision (Tasks 1–4), Task-2 findings, Task-5 numbers, an
 - [x] Task 1 — BC (frozen, 86.7%)
 - [x] Task 2 — BC diagnostics (4 failures, all stuck at grasp/lift phase)
 - [x] Task 3 — Residual (TD3+BC), shipped bound=0.005 + clip-in-target ablation
-- [x] Task 4 — Safety shield (per-dim, 5% margin, 0% clip rate)
+- [x] Task 4 — Safety shield (per-dim, 5% margin, 6.3% clip rate, NaN guard)
 - [x] Task 5 — Final eval: BC 0.867 → Residual+Shield 0.900 (+3.3pp)
 - [x] notes.md
 

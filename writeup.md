@@ -569,10 +569,15 @@ dims 0/2/6 use the full ±1 range (std 0.26/0.49/0.91) while the rotation dims 3
 move (std 0.02–0.08). A single L2 ball would either over-constrain the big dims or leave the
 small dims effectively unbounded; per-dim bounds respect each dim's own scale.
 
+**Decision 3 — NaN/Inf guard.** Before clipping, actions pass through `np.nan_to_num` (→ 0.0),
+because `np.clip` alone passes `NaN` straight through — a non-finite policy output would
+otherwise reach the env. Cheapest, highest-value guard for something literally named a *safety*
+shield; clip bounds then catch the substituted neutral action as normal.
+
 **Bonus — clip rate.** With the shipped 0.005 residual the shield fires on only **6.3%** of
-steps (and the gross-failure 0.05 residual hit **37%**). The shield is a **non-intrusive
-safety net**: it stays out of the way when the policy is well-behaved and clamps hard when it
-isn't — exactly the real-world instinct the rubric rewards.
+steps (re-measured over the 30-rollout seed-42 eval; and the gross-failure 0.05 residual hit
+**37%**). The shield is a **non-intrusive safety net**: it stays out of the way when the policy
+is well-behaved and clamps hard when it isn't — exactly the real-world instinct the rubric rewards.
 
 ## Task 5 — Final eval (BC vs Residual+Shield, 30 rollouts, seed 42, same starts)
 
