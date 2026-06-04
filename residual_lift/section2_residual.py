@@ -113,7 +113,8 @@ class QCritic(nn.Module):
 
 
 def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, log_every=500,
-                   alpha=ALPHA, delta_bound=DELTA_BOUND, save=True, seed=42):
+                   alpha=ALPHA, delta_bound=DELTA_BOUND, save=True, seed=42,
+                   reward_shaping=False, shape_coef=1.0):
     """Train the residual with TD3+BC on top of a frozen `bc_policy`.
 
     alpha controls the TD3+BC Q-vs-BC trade-off: larger -> trust the offline Q
@@ -148,6 +149,17 @@ def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, lo
     next_obs_all = _ds.next_obs.to(DEVICE)
     done_all     = _ds.dones.to(DEVICE).unsqueeze(-1)
     n_trans = obs_all.shape[0]
+
+    # Decision #5 ablation: dense reward shaping. The brief's example is `-|cube - eef|`;
+    # `gripper_to_cube_pos` (obs dims 7:10, part of the `object` key) IS that vector, so the
+    # shaped reward adds a dense distance bonus `shape_coef * (-||gripper_to_cube_pos(s')||)`
+    # at every step on top of the sparse terminal reward. This is non-potential-based shaping,
+    # so it deliberately changes the optimal policy (the point of the ablation). Default OFF.
+    if reward_shaping:
+        dist_next = next_obs_all[:, 7:10].norm(dim=-1, keepdim=True)   # ||gripper->cube|| at s'
+        reward_all = reward_all + shape_coef * (-dist_next)
+        print(f"[reward_shaping] coef={shape_coef}  mean dense term "
+              f"{(shape_coef * -dist_next).mean().item():+.4f}  (sparse reward kept)")
 
     history = {k: [] for k in ["step", "q_mean", "delta_mag", "critic_loss", "actor_loss"]}
     last_actor_loss = float("nan")
@@ -211,7 +223,7 @@ def train_residual(bc_policy, steps=TRAIN_STEPS, ablate_clip_in_target=False, lo
                   f"critic_loss {float(critic_loss):.4f}  actor_loss {last_actor_loss:.4f}")
 
     residual.eval()
-    if save and not ablate_clip_in_target:
+    if save and not ablate_clip_in_target and not reward_shaping:
         torch.save(residual.state_dict(), RESIDUAL_CKPT)
         print(f"Residual trained. Saved to {RESIDUAL_CKPT}")
     return residual, history

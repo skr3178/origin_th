@@ -460,11 +460,31 @@ methods (the algo-comparison run discarded AWAC/IQL weights with `save=False`; t
 at seed 42 — representative draws, success 0.933 each — via `scripts/render_extra_rollouts.py` →
 `out/{awac,iql}.pt`, `out/rollout_{awac,iql}.mp4`, and `out/rollout_bc_rnn_undertrained.mp4`).
 
-**5. Reward — sparse terminal, as given (no shaping).**
+**5. Reward — sparse terminal, as given (no shaping) — *ablated, not just argued*.**
 In this dataset `done ≡ reward` (both fire on the lift-success step), so the TD target
 `y = r + γ(1−done)Q'` correctly cuts the bootstrap at success. Shaping (e.g. −|cube−eef|)
 would bias toward *reaching*, but our Section-2 failures are at *grasp/lift* — it would fix
-the wrong phase.
+the wrong phase. We **ran the ablation** rather than only arguing it: dense shaping
+`r + coef·(−‖gripper_to_cube_pos‖)` (the brief's `−|cube−eef|`, since that vector is in the
+obs) at two strengths, everything else fixed (bound 0.005, seed 42, 30-rollout eval):
+
+![Reward shaping vs sparse (decision #5)](out/ablation_reward_shaping.png)
+
+| reward | success | settled `delta_mag` | clip | end `q_mean` |
+|---|---|---|---|---|
+| sparse (shipped) | 0.800 | 0.0050 | 0.061 | +0.27 |
+| shaped coef = 0.1 | 0.800 | 0.0049 | 0.068 | +0.27 |
+| shaped coef = 1.0 | 0.900 | 0.0048 | 0.026 | **−0.35** |
+
+The result is **more informative than "shaping hurts":** all three success rates are **within
+30-rollout sampling noise** of each other and of BC (0.867) — shaping neither reliably helps
+nor hurts. The *why* is the interesting part: at coef = 1.0 the dense penalty **dominates the
+value** and flips `q_mean` negative (+0.27 → −0.35), so the critic genuinely learned a
+different objective — yet `delta_mag` stays pinned at ~0.0048 and success is unchanged. **The
+shaped reward reaches the critic but never the policy**, because the tiny δ-bound + BC anchor
+keep the residual at BC regardless of what Q "wants." So on this data the *reward shape barely
+matters* — the bound and the all-expert data are the binding constraints, not the reward.
+(`scripts/ablation_reward_shaping.py` → `out/ablation_reward_shaping.{png,json}`.)
 
 **6. Clip δ inside the target Q — YES (there is a right answer).**
 The target action must be the **executable** action (residual bounded, sum clipped to
@@ -714,8 +734,9 @@ is the honest result the brief explicitly values over a cherry-picked high score
 ### Grounding & reproduction vs Mandlekar et al. 2021 (robomimic)
 
 The null result isn't specific to our setup — it's the central finding of the robomimic study
-(*"What Matters in Learning from Offline Human Demonstrations"*, `references/`). Their Table 1
-(low-dim) benchmarks 6 algorithms; the Lift rows:
+(Mandlekar et al., *"What Matters in Learning from Offline Human Demonstrations for Robot
+Manipulation"*, CoRL 2021, [arXiv:2108.03298](https://arxiv.org/abs/2108.03298); PDF in
+`references/`). Their Table 1 (low-dim) benchmarks 6 algorithms; the Lift rows:
 
 | | BC | BC-RNN | BCQ | CQL | HBC | IRIS |
 |---|---|---|---|---|---|---|
@@ -861,3 +882,12 @@ comparable, while `out/` continues to hold whichever is latest.
 `train_residual.py` → `ablation_residual.py` → `run_eval.py` → `plot_final_eval.py` →
 `bc_failure_modes.py` → `bc_arch_ablation.py`. The notebook `origin_assignment_takehome.ipynb`
 runs the core pipeline end-to-end. Each run's artifacts are archived under `out/runs/<descriptor>/`.
+
+## References
+
+- Mandlekar, A., Xu, D., Wong, J., Nasiriany, S., Wang, C., Kulkarni, R., Fei-Fei, L.,
+  Savarese, S., Zhu, Y., Martín-Martín, R. (2021). **What Matters in Learning from Offline
+  Human Demonstrations for Robot Manipulation.** *Conference on Robot Learning (CoRL).*
+  [arXiv:2108.03298](https://arxiv.org/abs/2108.03298) · code: robomimic
+  (<https://robomimic.github.io>). *Source of the Lift-PH dataset, the BC/BC-RNN/BCQ/CQL
+  baselines and TD3-BC defaults we build on, and the published Table-1 numbers reproduced above.*
