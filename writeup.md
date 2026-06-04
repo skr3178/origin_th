@@ -37,6 +37,40 @@ The frozen backbone. Four decisions:
 **Result: 86.7% rollout success** (in the 75–90% target band). Then frozen
 (`requires_grad=False`) — never touched again, per the rules.
 
+### What BC outputs — a 7-dim vector in [−1, 1]
+
+The controller is **OSC_POSE** (Operational Space Control), so the policy commands the
+**end-effector in Cartesian space**, and robosuite's controller internally converts that to
+joint torques (the policy does *not* output joint angles):
+
+| Action dim | Meaning | Type | Observed range / std (from data) |
+|---|---|---|---|
+| 0 | Δ EEF position **x** | continuous | ±1.0, std 0.26 |
+| 1 | Δ EEF position **y** | continuous | [−0.56, 0.65], std 0.13 |
+| 2 | Δ EEF position **z** | continuous | ±1.0, std 0.49 |
+| 3 | Δ EEF orientation (axis-angle **x**) | continuous | [−0.15, 0.12], std 0.02 |
+| 4 | Δ EEF orientation (axis-angle **y**) | continuous | [−1.0, 0.31], std 0.06 |
+| 5 | Δ EEF orientation (axis-angle **z**) | continuous | [−0.52, 0.48], std 0.08 |
+| 6 | **Gripper** command | continuous, ~bimodal | ±1.0, std 0.91 |
+
+So per step BC emits **3 position deltas + 3 rotation deltas + 1 gripper command**.
+
+**The gripper (dim 6) is continuous, effectively open/close.** It's a continuous value in
+[−1, 1], not a discrete state. The Panda's binary gripper controller maps it by **sign**:
+roughly **negative → open, positive → close** (magnitude saturates). That's why its std is
+**0.91** — the policy sits mostly near −1 (open while moving) or +1 (closed while holding), so
+the distribution is bimodal at the extremes; the middle (~0) is rarely commanded.
+
+**How the network produces it:**
+
+```
+BCPolicy.forward(obs):  net((obs − obs_mean) / obs_std) → tanh → 7-dim in [−1,1]
+```
+
+The final **tanh** is exactly why the output lands in [−1, 1] per dim — matching this action
+box, and why a uniform residual bound (Task 3) and per-dim shield (Task 4) are needed, since
+the dims carry very different scales (position/gripper swing ±1; rotations barely move).
+
 ### Loss function — choice, the robomimic reference, and alternatives
 
 **What robomimic uses (the reference).** Robomimic's deterministic BC (`robomimic/algo/bc.py`,
@@ -119,6 +153,75 @@ reached** — so **3 of 4 fail at the precision grasp/lift phase**, and **all ti
 400 (never crash)**: BC gets *stuck* at the cube (red traces stay flat at ~0 lift). This is
 exactly the regime a residual would need to correct — and, as it turns out, the regime a
 clumsy residual hurts most (Task 3, decision #3).
+
+### Failure taxonomy at scale (150 rollouts)
+
+30 rollouts give few failures, so we swept **150 rollouts** on the shipped BC *and* on a
+deliberately **over-trained** BC (80 epochs) to surface a larger, categorized failure sample:
+
+![BC failure taxonomy](out/bc_failure_taxonomy.png)
+
+| Failure mode | Shipped BC (144/150 ok) | Overfit BC (120/150 ok) |
+|---|---|---|
+| never_reached | 1 | **22** |
+| reached_no_grasp | 3 | 4 |
+| grasp_no_lift | 2 | 4 |
+| **total failures** | 6 | 30 |
+
+Findings: (1) **Shipped BC fails at the *end*** — 5 of 6 failures are grasp/lift (reached the
+cube, fumbled the precision step), confirming the 30-rollout result on a 5× larger sample
+(96% here vs 86.7% on the harder 30-rollout start set — sampling, not a different policy).
+(2) **Overfitting migrates the failure mode *earlier*** — the over-trained BC fails mostly at
+**never_reached** (22/30): a memorized, brittle policy can't even approach the cube from
+off-distribution starts. (3) Panel **(c)** cleanly separates the modes in phase space (min
+gripper→cube distance vs max lift): `reached_no_grasp` cluster at low distance / ~0 lift,
+`grasp_no_lift` slightly higher, `never_reached` past the reach threshold. (4) Panel **(d)**:
+**every** shipped failure ends at step 400 — BC *stalls*, it never crashes or diverges.
+
+## The residual architecture (Eq. 1)
+
+```
+a_executed(s) = clip( a_BC(s) + δ_θ(s) , -1, +1 )
+```
+
+This defines **what action the robot actually sends to the controller at state `s`** — the
+residual-policy architecture in one line.
+
+**Term by term:**
+
+| Symbol | Plain meaning |
+|---|---|
+| `s` | the current state/observation (the 19-dim vector: cube pose, gripper-to-cube, EEF pose, gripper joints) |
+| `a_BC(s)` | the **frozen** BC backbone's action — the 7-dim vector it would output on its own |
+| `δ_θ(s)` | the residual correction — a small 7-dim nudge from the trainable network (`θ` = its weights). **The only part learned in Task 3** |
+| `+` | element-wise add the correction onto BC's action, per dimension |
+| `clip(·, -1, +1)` | clamp every dimension back into the valid action box `[-1, +1]` the controller accepts |
+| `a_executed(s)` | the final action sent to the robot |
+
+**Concept: don't replace the base policy — correct it.** Keep the proven BC policy fixed and
+learn only a small additive adjustment on top. Three properties follow:
+
+1. **BC stays frozen.** `θ` lives only in `δ_θ`; `a_BC` never changes (the assignment's hard
+   rule, and Origin's production pattern: frozen VLA backbone + small learned residual).
+2. **The correction is bounded.** Beyond the outer clip, `δ_θ` is *itself* bounded first —
+   `δ = bound · tanh(net(s))` with `bound = 0.005` — so the residual can move each dimension by
+   at most ±0.005. This is why it "stays close to BC" (a rubric item) and can't hijack the
+   policy.
+3. **The outer clip is a safety/validity guard**, distinct from the Task-4 shield (which clips
+   to tighter, data-derived per-dim bounds). It only guarantees the result is in `[-1, +1]`.
+
+**Numeric example (one dimension, z-position):**
+
+- *Regular (within bound):* `a_BC = 0.80`, `δ_θ = +0.004` ("push down a bit to seat the grasp")
+  → sum `0.804` → in range → **`a_executed = 0.804`**.
+- *Overshoot (clip fires):* `a_BC = 0.999`, `δ_θ = +0.004` → sum `1.003` → clip →
+  **`a_executed = 1.0`**.
+
+**Why it matters here:** Eq. 1 is exactly the lever meant to fix the BC failures from Task 2 —
+BC stalls at the grasp/lift phase on ~3 of its 4 failures, and a small δ on the
+position/gripper dims is the natural correction. The catch (documented below): on all-expert
+`ph` data BC is already near-optimal, so the learned δ has little room to help — hence the
+residual ends up statistically indistinguishable from BC, not a clear win.
 
 ## Task 3 — Headline
 
@@ -318,6 +421,7 @@ latest. Naming is by the run's defining config (see `out/runs/README.md`).
 |---|---|---|
 | **`main_b0.005`** | The shipped pipeline: frozen BC → TD3+BC residual at **delta_bound = 0.005** → per-dim shield, plus the supporting experiments (BC failure diagnostics, the **clip-in-target ablation**, the **bound sweep** 0.05/0.02/0.01/0.005, and the **BC overfit→failure-mode sweep** at 2/5/20/80 epochs). | BC **0.867**, Residual+Shield **0.800** (within noise); bound is the critical knob; residual ceiling = BC on all-expert data. |
 | **`bc_arch_ablation`** | Task-1 architecture sweep: our **MLP 256×2** vs robomimic's **MLP 1024×2**, a **GMM 5-mode** head, and an **LSTM 400×2** (BC-RNN), 50 rollouts; 4-panel comparison (success, efficiency, overfitting curves, capacity). | 256×2 (0.92, 73k) on the efficiency frontier; 1024×2 (0.78) overfits; GMM=ours (unimodal); LSTM (1.00) marginal at 27× params. No larger arch gives a params-justified gain. |
+| **`bc_failure_taxonomy`** | Task-2 failure categorization at scale: 150 rollouts on the shipped BC and an over-trained BC; failure-mode bars, phase-space scatter, timing. | Shipped fails at grasp/lift (5/6); overfit fails at never_reached (22/30) — failure mode migrates late→early with overfitting; all failures time out (stall, never crash). |
 
 Future runs that vary a knob (e.g. a different residual bound, seed, or algorithm) get their
 own snapshot folder — e.g. `b0.010_seed42`, `iql_baseline` — so every run is preserved and
