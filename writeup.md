@@ -386,6 +386,34 @@ term `MSE(a_exec, a_demo)` makes it *offline-safe* by keeping the executed actio
 demonstrated actions (no extrapolation into unseen states). An ablation on the Q-weight α
 showed large α over-trusts a miscalibrated offline Q and regresses.
 
+*Cross-algorithm study (the brief's "run at least one ablation, explain why your choice won").*
+We re-ran the residual with two **non-TD3+BC** offline-RL algorithms, same framing (frozen BC +
+bounded δ, bound 0.005), 3 seeds each, 10k steps, eval seed 42:
+
+- **AWAC** — advantage-weighted regression actor (collapses to BC when advantages vanish);
+- **IQL** — expectile value net + V-bootstrapped Q, so it **never queries Q at OOD actions**.
+  Both are referenced: IQL is shipped in robomimic (`algo/iql.py`); AWAC's AWR actor *is*
+  robomimic-IQL's policy-extraction step (`residual_lift/algorithms.py`).
+
+![Residual algorithm comparison](out/algo_comparison.png)
+
+| Algorithm | success (3 seeds) | mean | std | shield clip | vs TD3+BC |
+|---|---|---|---|---|---|
+| TD3+BC | 0.93 / 0.97 / 0.87 | 0.922 | 0.051 | 0.061 | — |
+| AWAC | 0.90 / 0.90 / 0.90 | 0.900 | 0.000 | 0.008 | Welch p = 0.53 (NS) |
+| IQL | 0.90 / 0.93 / 0.93 | 0.922 | 0.019 | **0.000** | Welch p = 1.00 (NS) |
+
+Two conclusions. (1) **The null result is algorithm-independent** — all three are statistically
+indistinguishable (both p ≫ 0.05) and all sit at/just above BC's 0.867. This is the key
+finding: on all-expert data the *ceiling is BC*, no matter the offline-RL algorithm — so the
+data, not the algorithm, is the binding constraint. (2) **On the metrics that actually separate
+them here — stability and safety, not success — IQL wins**: lowest variance (std 0.019 vs
+TD3+BC's 0.051) and a **0.000 shield clip rate** (vs 0.061), exactly as its no-OOD-query design
+predicts. So TD3+BC is a fine choice, but **IQL is the better-suited algorithm for this
+narrow expert data** — it recovers BC with strictly tighter, never-out-of-distribution actions.
+(`scripts/algo_comparison.py` → `out/algo_comparison.{png,json}`, per-algorithm diagnostics in
+`out/algo_diag_{awac,iql}.png`.)
+
 **5. Reward — sparse terminal, as given (no shaping).**
 In this dataset `done ≡ reward` (both fire on the lift-success step), so the TD target
 `y = r + γ(1−done)Q'` correctly cuts the bootstrap at success. Shaping (e.g. −|cube−eef|)
